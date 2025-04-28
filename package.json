@@ -1,0 +1,21 @@
+{
+  "name": "excel-mcp-formatting",
+  "version": "0.1.0",
+  "description": "An Excel MCP with rich formatting capabilities",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "node dist/server.js",
+    "dev": "NODE_ENV=development node dist/server.js",
+    "build": "tsc",
+    "mcp": "tsc && node dist/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "exceljs": "^4.4.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.32",
+    "typescript": "^5.8.3"
+  }
+}

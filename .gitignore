@@ -1,0 +1,38 @@
+# Ignore backup files containing sensitive information
+backup/
+*.bak
+# Node.js dependencies
+node_modules/
+
+# Build output
+dist/
+
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Excel test files
+*.xlsx
+*.xls
+test_files/
