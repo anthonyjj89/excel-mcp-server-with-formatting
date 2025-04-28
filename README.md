@@ -1,4 +1,4 @@
-# Excel MCP Server with Formatting
+# Excel MCP Server with Formatting v0.1.0
 
 An enhanced Model Context Protocol (MCP) server for Excel integration with Claude Desktop, adding comprehensive formatting capabilities.
 
