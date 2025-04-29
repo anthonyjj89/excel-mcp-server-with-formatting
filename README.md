@@ -1,12 +1,13 @@
-# Excel MCP Server with Formatting v0.2.0
+# Excel MCP Server with Formatting v0.2.1
 
 An enhanced Model Context Protocol (MCP) server for Excel integration with Claude Desktop, adding comprehensive formatting capabilities.
 
-## v0.2.0 Features
+## v0.2.1 Features
 
 ### Formula Calculation Fix
 - Automatic formula calculation when Excel files are opened
 - No more manual clicking or entering formulas to activate them
+- v0.2.1 includes additional testing and stability improvements for formula handling
 - Formulas work correctly immediately upon file open
 
 ### Auto-Fit Column Width
@@ -14,6 +15,7 @@ An enhanced Model Context Protocol (MCP) server for Excel integration with Claud
 - Add `autoFit: true` parameter to write operations
 - Dedicated `autofit_columns` tool for precise control
 - Support for custom padding and min/max width constraints
+- v0.2.1 includes comprehensive real-world testing with complex spreadsheets
 
 This fork extends the original Excel MCP server with powerful formatting tools:
 
