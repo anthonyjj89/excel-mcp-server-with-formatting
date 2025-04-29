@@ -1,0 +1,67 @@
+--- excel-mcp.js.old	2025-04-28 00:00:00.000000000 +0000
++++ excel-mcp.js	2025-04-28 00:00:00.000000000 +0000
+@@ -472,9 +472,19 @@
+             if (formatting.bold !== undefined) cell.font.bold = formatting.bold;
+             if (formatting.italic !== undefined) cell.font.italic = formatting.italic;
+             if (formatting.fontSize !== undefined) cell.font.size = formatting.fontSize;
+-            if (formatting.fontColor !== undefined) cell.font.color = { argb: formatting.fontColor };
++            if (formatting.fontColor !== undefined) {
++              // Process the color format properly
++              let colorValue = formatting.fontColor;
++              if (colorValue.startsWith('#')) {
++                colorValue = colorValue.replace('#', '');
++              }
++              const argbColor = colorValue.length === 6 ? 'FF' + colorValue : colorValue;
++              cell.font.color = { argb: argbColor };
++            }
+             
+-            // Fill formatting
++            // Fill formatting with proper color handling
++            // Fixed to properly handle color formats with # prefix
++            // and ensure proper ARGB format with alpha channel
+             if (formatting.fillColor !== undefined) {
+               cell.fill = {
+                 type: 'pattern',
+                 pattern: 'solid',
+-                fgColor: { argb: formatting.fillColor }
++                fgColor: { argb: formatting.fillColor.startsWith('#') ? 'FF' + formatting.fillColor.replace('#', '') : 'FF' + formatting.fillColor },
++                bgColor: { argb: formatting.fillColor.startsWith('#') ? 'FF' + formatting.fillColor.replace('#', '') : 'FF' + formatting.fillColor }
+               };
+             }
+             
+@@ -565,7 +575,16 @@
+               if (styles.font.bold !== undefined) cell.font.bold = styles.font.bold;
+               if (styles.font.italic !== undefined) cell.font.italic = styles.font.italic;
+               if (styles.font.underline !== undefined) cell.font.underline = styles.font.underline;
+-              if (styles.font.color !== undefined) cell.font.color = { argb: styles.font.color };
++              if (styles.font.color !== undefined) {
++                // Process the color format properly
++                let colorValue = styles.font.color;
++                if (colorValue.startsWith('#')) {
++                  colorValue = colorValue.replace('#', '');
++                }
++                const argbColor = colorValue.length === 6 ? 'FF' + colorValue : colorValue;
++                cell.font.color = { argb: argbColor };
++              }
++              
+             }
+             
+             // Apply fill styles
+@@ -573,7 +592,16 @@
+               cell.fill = {
+                 type: styles.fill.type || 'pattern',
+                 pattern: styles.fill.pattern || 'solid',
+-                fgColor: styles.fill.color ? { argb: styles.fill.color } : undefined
++                fgColor: styles.fill.color ? { 
++                  argb: styles.fill.color.startsWith('#') ? 
++                    'FF' + styles.fill.color.replace('#', '') : 
++                    'FF' + styles.fill.color 
++                } : undefined,
++                bgColor: styles.fill.color ? { 
++                  argb: styles.fill.color.startsWith('#') ? 
++                    'FF' + styles.fill.color.replace('#', '') : 
++                    'FF' + styles.fill.color 
++                } : undefined
+               };
+             }
+             

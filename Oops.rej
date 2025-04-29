@@ -1,0 +1,36 @@
+@@ -565,7 +575,16 @@
+               if (styles.font.bold !== undefined) cell.font.bold = styles.font.bold;
+               if (styles.font.italic !== undefined) cell.font.italic = styles.font.italic;
+               if (styles.font.underline !== undefined) cell.font.underline = styles.font.underline;
+-              if (styles.font.color !== undefined) cell.font.color = { argb: styles.font.color };
++              if (styles.font.color !== undefined) {
++                // Process the color format properly
++                let colorValue = styles.font.color;
++                if (colorValue.startsWith('#')) {
++                  colorValue = colorValue.replace('#', '');
++                }
++                const argbColor = colorValue.length === 6 ? 'FF' + colorValue : colorValue;
++                cell.font.color = { argb: argbColor };
++              }
++              
+             }
+             
+             // Apply fill styles
+@@ -573,7 +592,16 @@
+               cell.fill = {
+                 type: styles.fill.type || 'pattern',
+                 pattern: styles.fill.pattern || 'solid',
+-                fgColor: styles.fill.color ? { argb: styles.fill.color } : undefined
++                fgColor: styles.fill.color ? { 
++                  argb: styles.fill.color.startsWith('#') ? 
++                    'FF' + styles.fill.color.replace('#', '') : 
++                    'FF' + styles.fill.color 
++                } : undefined,
++                bgColor: styles.fill.color ? { 
++                  argb: styles.fill.color.startsWith('#') ? 
++                    'FF' + styles.fill.color.replace('#', '') : 
++                    'FF' + styles.fill.color 
++                } : undefined
+               };
+             }
+             

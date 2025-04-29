@@ -1,8 +1,19 @@
-# Excel MCP Server with Formatting v0.1.0
+# Excel MCP Server with Formatting v0.2.0
 
 An enhanced Model Context Protocol (MCP) server for Excel integration with Claude Desktop, adding comprehensive formatting capabilities.
 
-## Enhanced Features
+## v0.2.0 Features
+
+### Formula Calculation Fix
+- Automatic formula calculation when Excel files are opened
+- No more manual clicking or entering formulas to activate them
+- Formulas work correctly immediately upon file open
+
+### Auto-Fit Column Width
+- Automatically adjust column widths to fit content
+- Add `autoFit: true` parameter to write operations
+- Dedicated `autofit_columns` tool for precise control
+- Support for custom padding and min/max width constraints
 
 This fork extends the original Excel MCP server with powerful formatting tools:
 
@@ -55,6 +66,14 @@ Add a bold black border around cells A1:B10 in the Sample sheet
 
 ```
 Merge cells A1:C1 and center the text in the Header sheet
+```
+
+```
+Write formulas to cells A1:B3 in Sheet1 that will calculate the sum, average, and max of values in column C
+```
+
+```
+Auto-fit columns A through E in the data sheet to match their content width
 ```
 
 ## Credits
