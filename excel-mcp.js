@@ -1062,6 +1062,272 @@ async function main() {
     }
   );
 
+  // Register the delete_rows tool
+  server.tool(
+    'delete_rows',
+    'Delete rows from an Excel worksheet',
+    {
+      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
+      sheetName: z.string().describe('Sheet name in the Excel file'),
+      startRow: z.number().describe('Starting row number (1-based index)'),
+      deleteCount: z.number().optional().describe('Number of rows to delete (default: 1)')
+    },
+    async ({ fileAbsolutePath, sheetName, startRow, deleteCount = 1 }) => {
+      try {
+        console.error(`Deleting ${deleteCount} rows starting from row ${startRow} in ${fileAbsolutePath}, sheet: ${sheetName}`);
+        
+        if (startRow < 1) {
+          throw new Error('Row number must be 1 or greater');
+        }
+        
+        if (deleteCount < 1) {
+          throw new Error('Delete count must be 1 or greater');
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(fileAbsolutePath);
+        
+        const worksheet = workbook.getWorksheet(sheetName);
+        if (!worksheet) {
+          throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        
+        // Check if we're trying to delete beyond existing rows
+        const actualRowCount = worksheet.actualRowCount;
+        if (startRow > actualRowCount) {
+          throw new Error(`Cannot delete row ${startRow}: sheet only has ${actualRowCount} rows`);
+        }
+        
+        // Adjust delete count if it would exceed available rows
+        const adjustedDeleteCount = Math.min(deleteCount, actualRowCount - startRow + 1);
+        
+        // Use spliceRows to delete rows
+        worksheet.spliceRows(startRow, adjustedDeleteCount);
+        
+        // Save the workbook
+        await workbook.xlsx.writeFile(fileAbsolutePath);
+        
+        const message = adjustedDeleteCount < deleteCount 
+          ? `Successfully deleted ${adjustedDeleteCount} rows (adjusted from ${deleteCount} to avoid exceeding sheet bounds)` 
+          : `Successfully deleted ${deleteCount} rows starting from row ${startRow}`;
+        
+        console.error(message);
+        
+        return { 
+          content: [{ 
+            type: "text", 
+            text: message
+          }]
+        };
+      } catch (error) {
+        console.error(`Error deleting rows: ${error.message}`);
+        return {
+          content: [{ 
+            type: "text", 
+            text: `Failed to delete rows: ${error.message}` 
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Register the delete_columns tool
+  server.tool(
+    'delete_columns',
+    'Delete columns from an Excel worksheet',
+    {
+      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
+      sheetName: z.string().describe('Sheet name in the Excel file'),
+      startColumn: z.string().describe('Starting column letter (e.g., "A", "B", "AA")'),
+      deleteCount: z.number().optional().describe('Number of columns to delete (default: 1)')
+    },
+    async ({ fileAbsolutePath, sheetName, startColumn, deleteCount = 1 }) => {
+      try {
+        console.error(`Deleting ${deleteCount} columns starting from column ${startColumn} in ${fileAbsolutePath}, sheet: ${sheetName}`);
+        
+        if (deleteCount < 1) {
+          throw new Error('Delete count must be 1 or greater');
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(fileAbsolutePath);
+        
+        const worksheet = workbook.getWorksheet(sheetName);
+        if (!worksheet) {
+          throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        
+        // Convert column letter to number
+        const startColNum = columnNameToNumber(startColumn.toUpperCase());
+        
+        // Check if we're trying to delete beyond existing columns
+        const actualColumnCount = worksheet.actualColumnCount;
+        if (startColNum > actualColumnCount) {
+          throw new Error(`Cannot delete column ${startColumn}: sheet only has ${actualColumnCount} columns`);
+        }
+        
+        // Adjust delete count if it would exceed available columns
+        const adjustedDeleteCount = Math.min(deleteCount, actualColumnCount - startColNum + 1);
+        
+        // Use spliceColumns to delete columns
+        worksheet.spliceColumns(startColNum, adjustedDeleteCount);
+        
+        // Save the workbook
+        await workbook.xlsx.writeFile(fileAbsolutePath);
+        
+        const endColumn = numberToColumnName(startColNum + adjustedDeleteCount - 1);
+        const message = adjustedDeleteCount < deleteCount 
+          ? `Successfully deleted ${adjustedDeleteCount} columns (adjusted from ${deleteCount} to avoid exceeding sheet bounds)` 
+          : `Successfully deleted ${deleteCount} columns from ${startColumn} to ${endColumn}`;
+        
+        console.error(message);
+        
+        return { 
+          content: [{ 
+            type: "text", 
+            text: message
+          }]
+        };
+      } catch (error) {
+        console.error(`Error deleting columns: ${error.message}`);
+        return {
+          content: [{ 
+            type: "text", 
+            text: `Failed to delete columns: ${error.message}` 
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Register the clear_range tool
+  server.tool(
+    'clear_range',
+    'Clear cell values and optionally formatting from a range in Excel worksheet',
+    {
+      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
+      sheetName: z.string().describe('Sheet name in the Excel file'),
+      range: z.string().describe('Range of cells to clear (e.g., "A1:C10")'),
+      clearFormatting: z.boolean().optional().describe('Also clear formatting (default: false)')
+    },
+    async ({ fileAbsolutePath, sheetName, range, clearFormatting = false }) => {
+      try {
+        console.error(`Clearing range ${range} in ${fileAbsolutePath}, sheet: ${sheetName}, including formatting: ${clearFormatting}`);
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(fileAbsolutePath);
+        
+        const worksheet = workbook.getWorksheet(sheetName);
+        if (!worksheet) {
+          throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        
+        const { startCol, startRow, endCol, endRow } = parseRange(range);
+        const startColNum = columnNameToNumber(startCol);
+        const endColNum = columnNameToNumber(endCol);
+        
+        let clearedCells = 0;
+        
+        for (let row = startRow; row <= endRow; row++) {
+          for (let col = startColNum; col <= endColNum; col++) {
+            const cellAddress = `${numberToColumnName(col)}${row}`;
+            const cell = worksheet.getCell(cellAddress);
+            
+            // Clear value
+            cell.value = null;
+            
+            // Clear formatting if requested
+            if (clearFormatting) {
+              cell.style = {};
+            }
+            
+            clearedCells++;
+          }
+        }
+        
+        // Save the workbook
+        await workbook.xlsx.writeFile(fileAbsolutePath);
+        
+        const message = clearFormatting 
+          ? `Successfully cleared ${clearedCells} cells (values and formatting) in range ${range}`
+          : `Successfully cleared ${clearedCells} cell values in range ${range}`;
+        
+        console.error(message);
+        
+        return { 
+          content: [{ 
+            type: "text", 
+            text: message
+          }]
+        };
+      } catch (error) {
+        console.error(`Error clearing range: ${error.message}`);
+        return {
+          content: [{ 
+            type: "text", 
+            text: `Failed to clear range: ${error.message}` 
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Register the delete_worksheet tool
+  server.tool(
+    'delete_worksheet',
+    'Delete an entire worksheet from an Excel workbook',
+    {
+      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
+      sheetName: z.string().describe('Name of the sheet to delete')
+    },
+    async ({ fileAbsolutePath, sheetName }) => {
+      try {
+        console.error(`Deleting worksheet "${sheetName}" from ${fileAbsolutePath}`);
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(fileAbsolutePath);
+        
+        const worksheet = workbook.getWorksheet(sheetName);
+        if (!worksheet) {
+          throw new Error(`Sheet "${sheetName}" not found`);
+        }
+        
+        // Check if this is the only worksheet
+        if (workbook.worksheets.length === 1) {
+          throw new Error('Cannot delete the only worksheet in the workbook');
+        }
+        
+        // Remove the worksheet
+        workbook.removeWorksheet(worksheet.id);
+        
+        // Save the workbook
+        await workbook.xlsx.writeFile(fileAbsolutePath);
+        
+        const message = `Successfully deleted worksheet "${sheetName}"`;
+        console.error(message);
+        
+        return { 
+          content: [{ 
+            type: "text", 
+            text: message
+          }]
+        };
+      } catch (error) {
+        console.error(`Error deleting worksheet: ${error.message}`);
+        return {
+          content: [{ 
+            type: "text", 
+            text: `Failed to delete worksheet: ${error.message}` 
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
   // Connect the server to the transport
   console.error('Excel MCP starting...');
   const transport = new StdioServerTransport();
