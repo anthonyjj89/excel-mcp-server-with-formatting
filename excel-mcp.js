@@ -1101,8 +1101,8 @@ async function main() {
         // Adjust delete count if it would exceed available rows
         const adjustedDeleteCount = Math.min(deleteCount, actualRowCount - startRow + 1);
         
-        // Use spliceRows to delete rows
-        worksheet.spliceRows(startRow, adjustedDeleteCount);
+        // Use spliceRows to delete rows (convert 1-based to 0-based indexing)
+        worksheet.spliceRows(startRow - 1, adjustedDeleteCount);
         
         // Save the workbook
         await workbook.xlsx.writeFile(fileAbsolutePath);
