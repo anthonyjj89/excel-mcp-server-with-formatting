@@ -1394,14 +1394,14 @@ async function main() {
     }
   );
 
-  // Register the clear_range tool
+  // Register the clear_range tool with smart duplicate detection
   server.tool(
     'clear_range',
-    'Clear cell values and optionally formatting from a range in Excel worksheet',
+    'Clear cell values and optionally formatting from a range in Excel worksheet. Auto-detects and clears complete duplicate sections when "smart" range is used.',
     {
       fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
       sheetName: z.string().describe('Sheet name in the Excel file'),
-      range: z.string().describe('Range of cells to clear (e.g., "A1:C10")'),
+      range: z.string().describe('Range of cells to clear (e.g., "A1:C10") or "smart" to auto-detect duplicates'),
       clearFormatting: z.boolean().optional().describe('Also clear formatting (default: false)')
     },
     async ({ fileAbsolutePath, sheetName, range, clearFormatting = false }) => {
@@ -1416,35 +1416,81 @@ async function main() {
           throw new Error(`Sheet "${sheetName}" not found`);
         }
         
-        const { startCol, startRow, endCol, endRow } = parseRange(range);
-        const startColNum = columnNameToNumber(startCol);
-        const endColNum = columnNameToNumber(endCol);
-        
         let clearedCells = 0;
+        let message = '';
         
-        for (let row = startRow; row <= endRow; row++) {
-          for (let col = startColNum; col <= endColNum; col++) {
-            const cellAddress = `${numberToColumnName(col)}${row}`;
-            const cell = worksheet.getCell(cellAddress);
+        // Smart duplicate detection mode
+        if (range.toLowerCase() === 'smart') {
+          console.error(`Smart duplicate detection mode activated`);
+          
+          // Phase 1: Analyze sheet content
+          const analysis = analyzeSheetContent(worksheet);
+          
+          // Phase 2: Detect duplicates
+          const duplicateRanges = detectDuplicateSections(analysis, {});
+          
+          if (duplicateRanges.length === 0) {
+            message = `Smart analysis: No duplicate sections found in sheet "${sheetName}"`;
+          } else {
+            // Phase 3: Clear all detected duplicates
+            const operations = [];
             
-            // Clear value
-            cell.value = null;
-            
-            // Clear formatting if requested
-            if (clearFormatting) {
-              cell.style = {};
+            for (const duplicate of duplicateRanges) {
+              const { startRow, endRow } = duplicate;
+              
+              for (let rowNum = startRow; rowNum <= endRow; rowNum++) {
+                const row = worksheet.getRow(rowNum);
+                row.eachCell((cell) => {
+                  cell.value = null;
+                  if (clearFormatting) {
+                    cell.style = {};
+                  }
+                  clearedCells++;
+                });
+              }
+              
+              operations.push(`Cleared duplicate section rows ${startRow}-${endRow}`);
             }
             
-            clearedCells++;
+            await workbook.xlsx.writeFile(fileAbsolutePath);
+            
+            message = `Smart deletion complete:\n`;
+            message += `• Duplicates detected: ${duplicateRanges.length} sections\n`;
+            message += `• Cells cleared: ${clearedCells}\n`;
+            message += `• Operations:\n`;
+            operations.forEach(op => {
+              message += `  - ${op}\n`;
+            });
           }
+        } else {
+          // Traditional range clearing
+          const { startCol, startRow, endCol, endRow } = parseRange(range);
+          const startColNum = columnNameToNumber(startCol);
+          const endColNum = columnNameToNumber(endCol);
+          
+          for (let row = startRow; row <= endRow; row++) {
+            for (let col = startColNum; col <= endColNum; col++) {
+              const cellAddress = `${numberToColumnName(col)}${row}`;
+              const cell = worksheet.getCell(cellAddress);
+              
+              // Clear value
+              cell.value = null;
+              
+              // Clear formatting if requested
+              if (clearFormatting) {
+                cell.style = {};
+              }
+              
+              clearedCells++;
+            }
+          }
+          
+          await workbook.xlsx.writeFile(fileAbsolutePath);
+          
+          message = clearFormatting 
+            ? `Successfully cleared ${clearedCells} cells (values and formatting) in range ${range}`
+            : `Successfully cleared ${clearedCells} cell values in range ${range}`;
         }
-        
-        // Save the workbook
-        await workbook.xlsx.writeFile(fileAbsolutePath);
-        
-        const message = clearFormatting 
-          ? `Successfully cleared ${clearedCells} cells (values and formatting) in range ${range}`
-          : `Successfully cleared ${clearedCells} cell values in range ${range}`;
         
         console.error(message);
         
@@ -1520,76 +1566,6 @@ async function main() {
     }
   );
 
-  // Smart deletion system for intelligent duplicate removal
-  server.tool(
-    'smart_delete_duplicates',
-    'Intelligently detect and remove duplicate content sections in one operation',
-    {
-      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
-      sheetName: z.string().describe('Sheet name in the Excel file'),
-      options: z.object({
-        preserveFirst: z.boolean().optional().describe('Keep the first occurrence of duplicates (default: true)'),
-        sectionTypes: z.array(z.string()).optional().describe('Types of sections to analyze (e.g., ["headers", "data"])'),
-        dryRun: z.boolean().optional().describe('Analyze without making changes (default: false)')
-      }).optional()
-    },
-    async ({ fileAbsolutePath, sheetName, options = {} }) => {
-      try {
-        console.error(`Smart duplicate analysis starting for ${fileAbsolutePath}, sheet: ${sheetName}`);
-        
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.readFile(fileAbsolutePath);
-        
-        const worksheet = workbook.getWorksheet(sheetName);
-        if (!worksheet) {
-          throw new Error(`Sheet "${sheetName}" not found`);
-        }
-
-        // Phase 1: Complete content analysis
-        const analysis = analyzeSheetContent(worksheet);
-        
-        // Phase 2: Detect duplicate sections
-        const duplicateRanges = detectDuplicateSections(analysis, options);
-        
-        if (duplicateRanges.length === 0) {
-          return {
-            content: [{
-              type: "text",
-              text: `No duplicate sections found in sheet "${sheetName}"`
-            }]
-          };
-        }
-
-        // Phase 3: Execute surgical deletion (unless dry run)
-        let deletionReport = "DRY RUN - No changes made";
-        if (!options.dryRun) {
-          deletionReport = await executeSurgicalDeletion(worksheet, duplicateRanges);
-          await workbook.xlsx.writeFile(fileAbsolutePath);
-        }
-
-        const report = formatDeletionReport(analysis, duplicateRanges, deletionReport, options.dryRun);
-        
-        console.error(`Smart deletion complete: ${duplicateRanges.length} sections processed`);
-        
-        return {
-          content: [{
-            type: "text",
-            text: report
-          }]
-        };
-        
-      } catch (error) {
-        console.error(`Error in smart deletion: ${error.message}`);
-        return {
-          content: [{
-            type: "text",
-            text: `Smart deletion failed: ${error.message}`
-          }],
-          isError: true
-        };
-      }
-    }
-  );
 
   // Connect the server to the transport
   console.error('Excel MCP starting...');
