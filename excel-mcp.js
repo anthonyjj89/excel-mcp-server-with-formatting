@@ -41,6 +41,198 @@ function parseRange(range) {
   };
 }
 
+// Smart deletion system helper functions
+function analyzeSheetContent(worksheet) {
+  const analysis = {
+    totalRows: worksheet.rowCount,
+    sections: [],
+    contentMap: new Map()
+  };
+
+  // Scan all rows for content patterns
+  for (let rowNum = 1; rowNum <= worksheet.rowCount; rowNum++) {
+    const row = worksheet.getRow(rowNum);
+    if (row.hasValues) {
+      const rowContent = [];
+      row.eachCell((cell, colNumber) => {
+        rowContent.push(cell.text || '');
+      });
+      
+      const rowSignature = rowContent.join('|').trim();
+      if (rowSignature) {
+        analysis.contentMap.set(rowNum, {
+          signature: rowSignature,
+          content: rowContent,
+          isEmpty: false
+        });
+      }
+    } else {
+      analysis.contentMap.set(rowNum, {
+        signature: '',
+        content: [],
+        isEmpty: true
+      });
+    }
+  }
+
+  return analysis;
+}
+
+function detectDuplicateSections(analysis, options) {
+  const duplicateRanges = [];
+  const signatureGroups = new Map();
+  
+  // Group rows by their content signature
+  for (const [rowNum, rowData] of analysis.contentMap) {
+    if (!rowData.isEmpty && rowData.signature) {
+      if (!signatureGroups.has(rowData.signature)) {
+        signatureGroups.set(rowData.signature, []);
+      }
+      signatureGroups.get(rowData.signature).push(rowNum);
+    }
+  }
+  
+  // Find duplicate sections (2+ consecutive rows with same signatures)
+  for (const [signature, rows] of signatureGroups) {
+    if (rows.length > 1) {
+      // Group consecutive rows into sections
+      const sections = [];
+      let currentSection = [rows[0]];
+      
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i] === rows[i-1] + 1) {
+          currentSection.push(rows[i]);
+        } else {
+          if (currentSection.length > 0) {
+            sections.push([...currentSection]);
+          }
+          currentSection = [rows[i]];
+        }
+      }
+      if (currentSection.length > 0) {
+        sections.push(currentSection);
+      }
+      
+      // Find multi-row duplicate sections
+      if (sections.length > 1) {
+        const sectionGroups = groupConsecutiveSections(sections, analysis);
+        
+        for (const group of sectionGroups) {
+          if (group.length > 1) {
+            // Keep first, mark others for deletion
+            for (let i = 1; i < group.length; i++) {
+              const section = group[i];
+              const startRow = Math.min(...section);
+              const endRow = Math.max(...section);
+              
+              duplicateRanges.push({
+                range: `A${startRow}:D${endRow}`,
+                startRow,
+                endRow,
+                reason: `Duplicate of section starting at row ${Math.min(...group[0])}`
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return duplicateRanges;
+}
+
+function groupConsecutiveSections(sections, analysis) {
+  const groups = [];
+  
+  for (const section of sections) {
+    // Check if this section is part of a larger duplicate block
+    const sectionSignatures = section.map(rowNum => 
+      analysis.contentMap.get(rowNum).signature
+    );
+    
+    let matched = false;
+    for (const group of groups) {
+      const groupSignatures = group[0].map(rowNum => 
+        analysis.contentMap.get(rowNum).signature
+      );
+      
+      if (arraysEqual(sectionSignatures, groupSignatures)) {
+        group.push(section);
+        matched = true;
+        break;
+      }
+    }
+    
+    if (!matched) {
+      groups.push([section]);
+    }
+  }
+  
+  return groups;
+}
+
+function arraysEqual(a, b) {
+  return a.length === b.length && a.every((val, i) => val === b[i]);
+}
+
+async function executeSurgicalDeletion(worksheet, duplicateRanges) {
+  let cellsCleared = 0;
+  const operations = [];
+  
+  for (const duplicate of duplicateRanges) {
+    const { startRow, endRow } = duplicate;
+    
+    // Clear each row in the duplicate section
+    for (let rowNum = startRow; rowNum <= endRow; rowNum++) {
+      const row = worksheet.getRow(rowNum);
+      row.eachCell((cell) => {
+        cell.value = null;
+        cellsCleared++;
+      });
+    }
+    
+    operations.push(`Cleared rows ${startRow}-${endRow}: ${duplicate.reason}`);
+  }
+  
+  return {
+    cellsCleared,
+    operations,
+    rangesProcessed: duplicateRanges.length
+  };
+}
+
+function formatDeletionReport(analysis, duplicateRanges, deletionReport, isDryRun) {
+  let report = `Smart Deletion Analysis Results:\n\n`;
+  report += `📊 Sheet Analysis:\n`;
+  report += `- Total rows scanned: ${analysis.totalRows}\n`;
+  report += `- Content rows found: ${Array.from(analysis.contentMap.values()).filter(r => !r.isEmpty).length}\n\n`;
+  
+  if (duplicateRanges.length > 0) {
+    report += `🔍 Duplicate Sections Detected:\n`;
+    duplicateRanges.forEach((dup, i) => {
+      report += `${i + 1}. Range ${dup.range}: ${dup.reason}\n`;
+    });
+    report += `\n`;
+    
+    if (isDryRun) {
+      report += `🔬 DRY RUN MODE - No changes made\n`;
+      report += `Would clear ${duplicateRanges.length} duplicate sections\n`;
+    } else {
+      report += `✅ Surgical Deletion Complete:\n`;
+      report += `- Sections processed: ${deletionReport.rangesProcessed}\n`;
+      report += `- Total cells cleared: ${deletionReport.cellsCleared}\n`;
+      report += `- Operations performed:\n`;
+      deletionReport.operations.forEach(op => {
+        report += `  • ${op}\n`;
+      });
+    }
+  } else {
+    report += `✅ No duplicate sections found - sheet is already clean!\n`;
+  }
+  
+  return report;
+}
+
 // Color formatting helper function
 function formatExcelColor(color) {
   if (!color) return undefined;
@@ -1321,6 +1513,77 @@ async function main() {
           content: [{ 
             type: "text", 
             text: `Failed to delete worksheet: ${error.message}` 
+          }],
+          isError: true
+        };
+      }
+    }
+  );
+
+  // Smart deletion system for intelligent duplicate removal
+  server.tool(
+    'smart_delete_duplicates',
+    'Intelligently detect and remove duplicate content sections in one operation',
+    {
+      fileAbsolutePath: z.string().describe('Absolute path to the Excel file'),
+      sheetName: z.string().describe('Sheet name in the Excel file'),
+      options: z.object({
+        preserveFirst: z.boolean().optional().describe('Keep the first occurrence of duplicates (default: true)'),
+        sectionTypes: z.array(z.string()).optional().describe('Types of sections to analyze (e.g., ["headers", "data"])'),
+        dryRun: z.boolean().optional().describe('Analyze without making changes (default: false)')
+      }).optional()
+    },
+    async ({ fileAbsolutePath, sheetName, options = {} }) => {
+      try {
+        console.error(`Smart duplicate analysis starting for ${fileAbsolutePath}, sheet: ${sheetName}`);
+        
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(fileAbsolutePath);
+        
+        const worksheet = workbook.getWorksheet(sheetName);
+        if (!worksheet) {
+          throw new Error(`Sheet "${sheetName}" not found`);
+        }
+
+        // Phase 1: Complete content analysis
+        const analysis = analyzeSheetContent(worksheet);
+        
+        // Phase 2: Detect duplicate sections
+        const duplicateRanges = detectDuplicateSections(analysis, options);
+        
+        if (duplicateRanges.length === 0) {
+          return {
+            content: [{
+              type: "text",
+              text: `No duplicate sections found in sheet "${sheetName}"`
+            }]
+          };
+        }
+
+        // Phase 3: Execute surgical deletion (unless dry run)
+        let deletionReport = "DRY RUN - No changes made";
+        if (!options.dryRun) {
+          deletionReport = await executeSurgicalDeletion(worksheet, duplicateRanges);
+          await workbook.xlsx.writeFile(fileAbsolutePath);
+        }
+
+        const report = formatDeletionReport(analysis, duplicateRanges, deletionReport, options.dryRun);
+        
+        console.error(`Smart deletion complete: ${duplicateRanges.length} sections processed`);
+        
+        return {
+          content: [{
+            type: "text",
+            text: report
+          }]
+        };
+        
+      } catch (error) {
+        console.error(`Error in smart deletion: ${error.message}`);
+        return {
+          content: [{
+            type: "text",
+            text: `Smart deletion failed: ${error.message}`
           }],
           isError: true
         };
